@@ -164,7 +164,7 @@ static struct process_node *insert_process(pid_t pid) {
     }
     node->pid = pid;
     node->state = PROC_FILE_OPEN;
-    node->dq = NULL;
+    node->dq = kmalloc(sizeof(deque), GFP_KERNEL);
     node->next = process_list;
     process_list = node;
     return node;
@@ -302,7 +302,7 @@ static ssize_t procfile_read(struct file *filep, char __user *buffer, size_t len
         ret = handle_read(curr);
         if (ret >= 0) {
             if (copy_to_user(buffer, procfs_buffer, procfs_buffer_size) != 0) {
-                printk(KERN_ALERT "Error: could not copy data to user space\n");
+                pr_alert("Error: could not copy data to user space\n");
                 ret = -EACCES;
             } else {
                 ret = procfs_buffer_size;
