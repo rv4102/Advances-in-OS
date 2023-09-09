@@ -164,7 +164,7 @@ static struct process_node *insert_process(pid_t pid) {
     }
     node->pid = pid;
     node->state = PROC_FILE_OPEN;
-    node->dq = NULL;
+    node->dq = kmalloc(sizeof(deque), GRP_KERNEL);
     node->next = process_list;
     process_list = node;
     return node;
