@@ -50,10 +50,58 @@ static struct process_node *process_list = NULL;
 
 DEFINE_MUTEX(mutex);
 
+// function prototypes
+
+static int init_deque(deque *dq, int sz);
+static int insert_deque(deque *dq, int val);
+static int read_deque(deque *dq);
+static void free_deque(deque *dq);
+
+static struct process_node *find_process(pid_t pid);
+static struct process_node *insert_process(pid_t pid);
+static void delete_process_list(void);
+static int delete_process(pid_t pid);
+
+static int procfile_open(struct inode *inode, struct file *file);
+static int procfile_close(struct inode *inode, struct file *file);
+static ssize_t handle_read(struct process_node *curr);
+static ssize_t procfile_read(struct file *filep, char __user *buffer, size_t length, loff_t *offset);
+static ssize_t handle_write(struct process_node *curr);
+static ssize_t procfile_write(struct file *filep, const char __user *buffer, size_t length, loff_t *offset);
+
+static const struct proc_ops proc_fops = {
+    .proc_open = procfile_open,
+    .proc_read = procfile_read,
+    .proc_write = procfile_write,
+    .proc_release = procfile_close,
+};
+
+// Module initialization
+int init_module(void) {
+    pr_info("LKM for %s loaded\n", PROCFS_NAME);
+
+    proc_file = proc_create(PROCFS_NAME, 0666, NULL, &proc_fops);
+    if (proc_file == NULL) {
+        pr_alert("Error: could not create proc file\n");
+        return -ENOENT;
+    }
+    pr_info("/proc/%s created\n", PROCFS_NAME);
+    return 0;
+}
+
+// Module cleanup
+void cleanup_module(void) {
+    delete_process_list();
+    remove_proc_entry(PROCFS_NAME, NULL);
+    pr_info("/proc/%s removed\n", PROCFS_NAME);
+    pr_info("LKM for %s unloaded\n", PROCFS_NAME);
+}
+
+
 // initialize the deque
 static int init_deque(deque *dq, int sz) {
     if (sz < 1 || sz > 100) {
-        printk(KERN_ALERT "Error: deque size invalid\n");
+        pr_alert("Error: deque size invalid\n");
         return -EINVAL;
     }
 
@@ -69,7 +117,7 @@ static int insert_deque(deque *dq, int val) {
     node *temp;
 
     if (dq->capacity == dq->curr_size) {
-        printk(KERN_ALERT "Error: deque is full\n");
+        pr_alert("Error: deque is full\n");
         return -EACCES;
     }
 
@@ -103,7 +151,7 @@ static int read_deque(deque *dq) {
     int val;
 
     if (dq->curr_size == 0) {
-        printk(KERN_ALERT "Error: deque is empty\n");
+        pr_alert("Error: deque is empty\n");
         return -EACCES;
     }
 
@@ -164,7 +212,7 @@ static struct process_node *insert_process(pid_t pid) {
     }
     node->pid = pid;
     node->state = PROC_FILE_OPEN;
-    node->dq = kmalloc(sizeof(deque), GRP_KERNEL);
+    node->dq = kmalloc(sizeof(deque), GFP_KERNEL);
     node->next = process_list;
     process_list = node;
     return node;
@@ -216,20 +264,20 @@ static int procfile_open(struct inode *inode, struct file *file) {
     mutex_lock(&mutex);
 
     pid = current->pid;
-    printk(KERN_INFO "procfile_open() invoked by process %d\n", pid);
+    pr_info("procfile_open() invoked by process %d\n", pid);
     ret = 0;
 
     curr = find_process(pid);
     if (curr == NULL) {
         curr = insert_process(pid);
         if (curr == NULL) {
-            printk(KERN_ALERT "Error: could not allocate memory for process node\n");
+            pr_alert("Error: could not allocate memory for process node\n");
             ret = -ENOMEM;
         } else {
-            printk(KERN_INFO "Process %d has been added to the process list\n", pid);
+            pr_info("Process %d has been added to the process list\n", pid);
         }
     } else {
-        printk(KERN_ALERT "Error: process %d has the proc file already open\n", pid);
+        pr_alert("Error: process %d has the proc file already open\n", pid);
         ret = -EACCES;
     }
 
@@ -246,16 +294,16 @@ static int procfile_close(struct inode *inode, struct file *file) {
     mutex_lock(&mutex);
 
     pid = current->pid;
-    printk(KERN_INFO "procfile_close() invoked by process %d\n", pid);
+    pr_info("procfile_close() invoked by process %d\n", pid);
     ret = 0;
 
     curr = find_process(pid);
     if (curr == NULL) {
-        printk(KERN_ALERT "Error: process %d does not have the proc file open\n", pid);
+        pr_alert("Error: process %d does not have the proc file open\n", pid);
         ret = -EACCES;
     } else {
         delete_process(pid);
-        printk(KERN_INFO "Process %d has been removed from the process list\n", pid);
+        pr_info("Process %d has been removed from the process list\n", pid);
     }
 
     mutex_unlock(&mutex);
@@ -266,12 +314,12 @@ static int procfile_close(struct inode *inode, struct file *file) {
 static ssize_t handle_read(struct process_node *curr) {
     int val;
     if (curr->state == PROC_FILE_OPEN) {
-        printk(KERN_ALERT "Error: process %d has not yet written anything to the proc file\n", curr->pid);
+        pr_alert("Error: process %d has not yet written anything to the proc file\n", curr->pid);
         return -EACCES;
     }
     // curr->dq cannot be NULL if the control comes here
     if (curr->dq->curr_size == 0) {
-        printk(KERN_ALERT "Error: deque is empty\n");
+        pr_alert("Error: deque is empty\n");
         return -EACCES;
     }
     val = read_deque(curr->dq);
@@ -290,25 +338,24 @@ static ssize_t procfile_read(struct file *filep, char __user *buffer, size_t len
     mutex_lock(&mutex);
 
     pid = current->pid;
-    printk(KERN_INFO "procfile_read() invoked by process %d\n", pid);
+    pr_info("procfile_read() invoked by process %d\n", pid);
     ret = 0;
 
     curr = find_process(pid);
     if (curr == NULL) {
-        printk(KERN_ALERT "Error: process %d does not have the proc file open\n", pid);
+        pr_alert("Error: process %d does not have the proc file open\n", pid);
         ret = -EACCES;
     } else {
         procfs_buffer_size = min(length, (size_t)PROCFS_MAX_SIZE);
         ret = handle_read(curr);
         if (ret >= 0) {
             if (copy_to_user(buffer, procfs_buffer, procfs_buffer_size) != 0) {
-                printk(KERN_ALERT "Error: could not copy data to user space\n");
+                pr_alert("Error: could not copy data to user space\n");
                 ret = -EACCES;
             } else {
                 ret = procfs_buffer_size;
             }
         }
-        // print_dq(curr->dq);
     }
     mutex_unlock(&mutex);
     return ret;
@@ -321,35 +368,35 @@ static ssize_t handle_write(struct process_node *curr) {
 
     if (curr->state == PROC_FILE_OPEN) {
         if (procfs_buffer_size > 1ul) {
-            printk(KERN_ALERT "Error: Buffer size for capacity must be 1 byte\n");
+            pr_alert("Error: Buffer size for capacity must be 1 byte\n");
             return -EINVAL;
         }
         capacity = (size_t)procfs_buffer[0];
         if (capacity < 1 || capacity > 100) {
-            printk(KERN_ALERT "Error: Capacity must be between 1 and 100\n");
+            pr_alert("Error: Capacity must be between 1 and 100\n");
             return -EINVAL;
         }
         if (init_deque(curr->dq, capacity) < 0) {
-            printk(KERN_ALERT "Error: deque initialization failed\n");
+            pr_alert("Error: deque initialization failed\n");
             return -ENOMEM;
         }
-        printk(KERN_INFO "Deque with capacity %zu has been intialized for process %d\n", capacity, curr->pid);
+        pr_info("Deque with capacity %zu has been intialized for process %d\n", capacity, curr->pid);
         curr->state = PROC_READ_VALUE;
     } else if (curr->state == PROC_READ_VALUE) {
         if (procfs_buffer_size > sizeof(int)) {
-            printk(KERN_ALERT "Error: Buffer size for value must be 4 bytes\n");
+            pr_alert("Error: Buffer size for value must be 4 bytes\n");
             return -EINVAL;
         }
         if (curr->dq->curr_size == curr->dq->capacity) {
-            printk(KERN_ALERT "Error: deque is full\n");
+            pr_alert("Error: deque is full\n");
             return -EACCES;
         }
         val = *((int *)procfs_buffer);
         if (insert_deque(curr->dq, val) < 0) {
-            printk(KERN_ALERT "Error: Unable to insert value in deque\n");
+            pr_alert("Error: Unable to insert value in deque\n");
             return -EACCES;
         }
-        printk(KERN_INFO "Value %d has been written to the proc file for process %d\n", val, curr->pid);
+        pr_info("Value %d has been written to the proc file for process %d\n", val, curr->pid);
     }
     return procfs_buffer_size;
 }
@@ -363,59 +410,27 @@ static ssize_t procfile_write(struct file *filep, const char __user *buffer, siz
     mutex_lock(&mutex);
 
     pid = current->pid;
-    printk(KERN_INFO "procfile_write() invoked by process %d\n", pid);
+    pr_info("procfile_write() invoked by process %d\n", pid);
     ret = 0;
 
     curr = find_process(pid);
     if (curr == NULL) {
-        printk(KERN_ALERT "Error: process %d does not have the proc file open\n", pid);
+        pr_alert("Error: process %d does not have the proc file open\n", pid);
         ret = -EACCES;
     } else {
         if (buffer == NULL || length == 0) {
-            printk(KERN_ALERT "Error: empty write\n");
+            pr_alert("Error: empty write\n");
             ret = -EINVAL;
         } else {
             procfs_buffer_size = min(length, (size_t)PROCFS_MAX_SIZE);
             if (copy_from_user(procfs_buffer, buffer, procfs_buffer_size)) {
-                printk(KERN_ALERT "Error: could not copy from user\n");
+                pr_alert("Error: could not copy from user\n");
                 ret = -EFAULT;
             } else {
                 ret = handle_write(curr);
             }
         }
-        // print_pq(curr->dq);
     }
     mutex_unlock(&mutex);
     return ret;
 }
-
-static const struct proc_ops proc_fops = {
-    .proc_open = procfile_open,
-    .proc_read = procfile_read,
-    .proc_write = procfile_write,
-    .proc_release = procfile_close,
-};
-
-// Module initialization
-static int __init lkm_init(void) {
-    printk(KERN_INFO "LKM for %s loaded\n", PROCFS_NAME);
-
-    proc_file = proc_create(PROCFS_NAME, 0666, NULL, &proc_fops);
-    if (proc_file == NULL) {
-        printk(KERN_ALERT "Error: could not create proc file\n");
-        return -ENOENT;
-    }
-    printk(KERN_INFO "/proc/%s created\n", PROCFS_NAME);
-    return 0;
-}
-
-// Module cleanup
-static void __exit lkm_exit(void) {
-    delete_process_list();
-    remove_proc_entry(PROCFS_NAME, NULL);
-    printk(KERN_INFO "/proc/%s removed\n", PROCFS_NAME);
-    printk(KERN_INFO "LKM for %s unloaded\n", PROCFS_NAME);
-}
-
-module_init(lkm_init);
-module_exit(lkm_exit);
