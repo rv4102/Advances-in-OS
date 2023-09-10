@@ -1,0 +1,1 @@
+cmd_/home/jkt/Documents/AOS/A1/Module.symvers := sed 's/ko$$/o/' /home/jkt/Documents/AOS/A1/modules.order | scripts/mod/modpost -m -a   -o /home/jkt/Documents/AOS/A1/Module.symvers -e -i Module.symvers   -T -

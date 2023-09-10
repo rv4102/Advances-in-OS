@@ -1,0 +1,1 @@
+cmd_/home/jkt/Documents/AOS/A1/partb_1_20CS30045_20CS30024.ko := ld -r  -m elf_x86_64 -z noexecstack   --build-id=sha1  -T scripts/module.lds -o /home/jkt/Documents/AOS/A1/partb_1_20CS30045_20CS30024.ko /home/jkt/Documents/AOS/A1/partb_1_20CS30045_20CS30024.o /home/jkt/Documents/AOS/A1/partb_1_20CS30045_20CS30024.mod.o;  true
