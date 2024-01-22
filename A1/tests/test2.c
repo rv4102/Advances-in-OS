@@ -5,19 +5,22 @@
 #include <unistd.h>
 #include <wait.h>
 
-void execute(int val[], int n) {
+void execute(int val[], int n, int pid) {
     int fd = open("/proc/partb_1_20CS30045_20CS30024", O_RDWR);
     char c = (char)n;
     write(fd, &c, 1);
+
+    char pr = (pid) ? 'P' : 'C';
+
     for (int i = 0; i < n; i++) {
         int ret = write(fd, &val[i], sizeof(int));
-        printf("[Proc %d] Write: %d, Return: %d\n", getpid(), val[i], ret);
+        printf("%c [Proc %d] Write: %d, Return: %d\n", pr, getpid(), val[i], ret);
         usleep(100);
     }
     for (int i = 0; i < n; i++) {
         int out;
         int ret = read(fd, &out, sizeof(int));
-        printf("[Proc %d] Read: %d, Return: %d\n", getpid(), out, ret);
+        printf("%c [Proc %d] Read: %d, Return: %d\n", pr, getpid(), out, ret);
         usleep(100);
     }
     close(fd);
@@ -29,9 +32,9 @@ int main() {
 
     int pid = fork();
     if (pid == 0) {
-        execute(val_c, 4);
+        execute(val_c, 4, pid);
     } else {
-        execute(val_p, 4);
+        execute(val_p, 4, pid);
         wait(NULL);
     }
     
